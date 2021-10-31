@@ -88,6 +88,12 @@ make sure you are the project directory and having venv activated
 
     flask run
 
+## Testing the app
+
+-  First method is to run the application in one system i.e user in one browser tab and donor in another tab. Follow the procedures separately for both. refer ppt.
+
+-  Second method is to run the application in two system i.e user in one system and donor in another different system. This is the real time case.
+
 ### Now open the link generated in the terminal and the webapp is ready to use
 
 
