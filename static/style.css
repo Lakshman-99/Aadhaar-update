@@ -108,6 +108,9 @@ button{
    .head{
     width: 100px;
    }
+   #fin{
+   width: 300px;
+ }
 }
 
 .Captcha{

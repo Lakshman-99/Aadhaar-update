@@ -39,10 +39,35 @@ def geoloc(postal_address):
 #=> Message service
 def msg(number, name, refid):
     url = "https://www.fast2sms.com/dev/bulk"
-    mess = f"{name} has requested you to share your address with him to upate his aadhar address, please use the following link ###########"
-    payload = f"sender_id=FSTSMS&message={mess}&language=english&route=p&numbers={number},8667688729,9092269687"
+    mess = f"{name} has requested you to share your address with him to upate his aadhar address. please use the following link, http://127.0.0.1:5000/approval/{refid}"
+    payload = f"sender_id=FSTSMS&message={mess}&language=english&route=p&numbers={number}"
     headers = {
-        'authorization': "B7UXClFIymn8MfJrzSD4ERs0Qd935WYT2NiVoHGhLbat1ucwAKno2XEcK8GIyTuh6Zlq3MUvHxYpFDm0",
+        'authorization': "X2AQjkaqz0PVlJLMOGd4sFgZnSEHr9Kxv8cwWNoBi71y6mup3UUgcz6Hx5Sl3qFVy2KThCXYekZjObnI",
+        'Content-Type': "application/x-www-form-urlencoded",
+        'Cache-Control': "no-cache",
+    }
+    response = requests.request("POST", url, data=payload, headers=headers)
+    print(response.text)
+
+#=> Message service
+def msg2(number, name, addrss):
+    url = "https://www.fast2sms.com/dev/bulk"
+    mess = f"{name} has successfully updated his aadhaar address. Here is the updated address of his for your reference, {addrss}"
+    payload = f"sender_id=FSTSMS&message={mess}&language=english&route=p&numbers={number}"
+    headers = {
+        'authorization': "X2AQjkaqz0PVlJLMOGd4sFgZnSEHr9Kxv8cwWNoBi71y6mup3UUgcz6Hx5Sl3qFVy2KThCXYekZjObnI",
+        'Content-Type': "application/x-www-form-urlencoded",
+        'Cache-Control': "no-cache",
+    }
+    response = requests.request("POST", url, data=payload, headers=headers)
+    print(response.text)
+
+#=> Message service
+def msg3(number, mess):
+    url = "https://www.fast2sms.com/dev/bulk"
+    payload = f"sender_id=FSTSMS&message={mess}&language=english&route=p&numbers={number}"
+    headers = {
+        'authorization': "X2AQjkaqz0PVlJLMOGd4sFgZnSEHr9Kxv8cwWNoBi71y6mup3UUgcz6Hx5Sl3qFVy2KThCXYekZjObnI",
         'Content-Type': "application/x-www-form-urlencoded",
         'Cache-Control': "no-cache",
     }
@@ -152,18 +177,21 @@ def func():
         try:
             number = request.form.get("capcha")
             ad_numbe = request.form.get("aadhaar_num")
+            unum = request.form.get("num")
             p = otpgen(ad_numbe, txn_id, number)
             jobj = json.loads(p.text)
             txxn = jobj["txnId"]
             sta = jobj["status"]
             print(sta)
             if(sta == "Success"):
-                return render_template('success.html')
+                resp = make_response(render_template('success.html'))
+                resp.set_cookie('user_number',unum)
+                return resp
             else:
                 return render_template('login.html')
         except:
             sta = jobj["status"]
-            sta1= jobj["message"]
+            sta1= jobj["errorDetails"]["messageLocal"]
             return render_template('login.html', error=sta, error1=sta1)
 
         print(number, ad_number)
@@ -188,7 +216,7 @@ def func2():
                 return render_template('login2.html')
         except:
             sta = jobj["status"]
-            sta1= jobj["message"]
+            sta1= jobjjobj["errorDetails"]["messageLocal"]
             return render_template('login2.html', error=sta, error1=sta1)
 
         print(number, ad_number)
@@ -199,6 +227,11 @@ def index():
     if(request.cookies.get('ReferenceId') != None):
         return redirect(url_for('appstatus'))
     return render_template("index.html")
+
+#=> About page has the tutorial!
+@app.route('/about',methods=['GET','POST'])
+def about():
+    return render_template("about.html")
 
 #=> Login page where captcha image is generated whenever reloaded
 @app.route('/login',methods=['GET','POST'])
@@ -285,15 +318,22 @@ def success2():
     global txx2, userpi
     userpi = request.cookies.get('UserReferenceId')
     print(userpi)
+    optt = request.cookies.get('option')
     if(request.method=="POST"):
         try:
             otp = request.form.get("otp")
             passc = request.form.get("passcode")
             print(otp)
-            res = otpverify(ad_number, otp, txxn, passc)
+            if(passc == ""):
+                res = otpverify(ad_number, otp, txxn)
+            else:
+                res = otpverify(ad_number, otp, txxn, passc)
             jobj = json.loads(res.text)
+            unum = coll.find_one({"ReferenceId": userpi})["User_Number"]
+            decunum = fernet.decrypt(unum).decode()
             sta = jobj["status"]
-            if(sta == "Success"):
+            opt = request.cookies.get('option')
+            if(sta == "Success" and opt == "YES" ):
                 cap_code = jobj["eKycXML"]
                 decodeit = open('file.zip', 'wb')
                 decodeit.write(base64.b64decode((cap_code)))
@@ -306,28 +346,33 @@ def success2():
                 coll.find_one_and_update({"ReferenceId": userpi },{'$set': { "Donor_Address" : encMessage }})
                 coll.find_one_and_update({"ReferenceId": userpi },{'$set': { "Raw_Donor_Address" : encM }})
                 coll.find_one_and_update({"ReferenceId": userpi },{"$push":{"logs":{"Activity":"Donor Approval Login","Time stamp": datetime.datetime.now(),"TransactionId": txxn,"ReferenceId": ad_number, "Message":"Donor has successfully shared his address." }}})
+                msg3(decunum, "Donor has successfully accepted your request for change of address and has shared his address with you. Please the following link, http://127.0.0.1:5000/appstatus")
                 os.remove(os.getcwd()+"/file.zip")
                 os.remove(os.getcwd()+"/extract/"+fn)
                 resp = make_response(redirect(url_for('donorsuccess')))
                 resp.set_cookie('ReferenceId_donor', donor_pid )
                 return resp
+            elif(opt == "NO"):
+                msg3(decunum, "Donor has denied your request for change of address.")
+                coll.find_one_and_update({"ReferenceId": userpi },{"$push":{"logs":{"Activity":"Donor Approval Status","Time stamp": datetime.datetime.now(),"Approval-status": opt, "Message":"Donor has rejected the reqeust of change of address." }}})
+                return redirect(url_for('donorsuccess'))
             else:
                 sta1 = jobj["message"]
                 coll.find_one_and_update({"ReferenceId": userpi },{"$push":{"logs":{"Activity":"Donor Approval Login","Status":"Login error","Time stamp": datetime.datetime.now(),"TransactionId": txxn,"ReferenceId": ad_num, "Error": sta1 }}})
-                return render_template("success2.html", error=sta, error1=sta1)
+                return render_template("success2.html", error=sta, error1=sta1, out=opt)
 
         except:
             sta = jobj["status"]
             sta1 = jobj["message"]
-            return render_template("success2.html", error=sta, error1=sta1)
+            return render_template("success2.html", error=sta, error1=sta1, out=optt)
 
-    return render_template("success2.html")
+    return render_template("success2.html", out= optt)
 
 #=> Finally here display the user address and request for landlord number or aadhar number
 @app.route('/change-address',methods=['GET','POST'])
 def change_address():
-    if(len(request.cookies.get('User_Address'))>0):
-        return render_template('change-address.html', output=request.cookies.get('UserReferenceId'))
+    if(request.cookies.get('User_Address') != None and request.method != "POST"):
+        return render_template('change-address.html', output=request.cookies.get('User_Address'))
 
     address, name, pid, fn = getadress()
     dbfind = coll.find_one({"ReferenceId": pid })
@@ -335,19 +380,24 @@ def change_address():
 
     if(request.method=="POST"):
         number = request.form.get("Number")
-        adnum = request.form.get("Ad_Number")
         msg(number, name, pid)
+        print(number)
+        ennumber = fernet.encrypt(number.encode())
+        coll.find_one_and_update({"ReferenceId": pid },{'$set': { "Donor_Number" : ennumber }})
         coll.find_one_and_update({"ReferenceId": pid },{"$push":{"logs":{"Activity":"User_Requested","Time stamp": datetime.datetime.now(),"ReferenceId": pid,"Request-Status":"Sent Successfully"}}})
         os.remove(os.getcwd()+"/file.zip")
         os.remove(os.getcwd()+"/extract/"+fn)
-        return render_template('change-address.html', output=address, out1=name, out2="Request sent successfully", out3="yes")
+        return redirect(url_for('appstatus'))
+        #return render_template('change-address.html', output=address, out1=name, out2="Request sent successfully", out3="yes")
 
+    unum = request.cookies.get('user_number')
+    encnum = fernet.encrypt(unum.encode())
     encMessage = fernet.encrypt(address.encode())
     if(dbfind == None):
-        coll.insert_one({"ReferenceId": pid ,"Name": name ,"User_Address": encMessage,"Donor_Address": "Null","Raw_Donor_Address": "Null","Status":"Null","type":"User_update","logs": [] })
+        coll.insert_one({"ReferenceId": pid ,"Name": name ,"User_Address": encMessage,"User_Number": encnum,"Donor_Address": "Null","Raw_Donor_Address": "Null","Donor_Number":"Null","Status":"Null","type":"User_update","logs": [] })
         coll.find_one_and_update({"ReferenceId": pid },{"$push":{"logs":{"Activity":"User_Logined","Time stamp": datetime.datetime.now(),"TransactionId": txxn,"ReferenceId": pid,"Status":"Successfull"}}})
     else:
-        coll.find_one_and_update({"ReferenceId": pid },{"$push":{"logs":{"Activity":"Logined","Time stamp": datetime.datetime.now(),"TransactionId": txxn,"ReferenceId": pid,"Status":"Successfull"}}})
+        coll.find_one_and_update({"ReferenceId": pid },{"$push":{"logs":{"Activity":"User_Logined","Time stamp": datetime.datetime.now(),"TransactionId": txxn,"ReferenceId": pid,"Status":"Successfull"}}})
 
     resp = make_response(render_template('change-address.html', output=address, out1=name))
     resp.set_cookie('ReferenceId', pid )
@@ -359,18 +409,26 @@ def approval(userpid):
     global userpi
     userpi = userpid
     print(userpi)
-    if(request.method=="POST"):
+    veriff = daddres = coll.find_one({"ReferenceId": userpid})["Status"]
+    if(request.method=="POST" and veriff == "Null"):
         option = request.form.get('opt')
         print(option)
         coll.find_one_and_update({"ReferenceId": userpid },{'$set': { "Status" : option }})
         if(option == "YES"):
             coll.find_one_and_update({"ReferenceId": userpid },{"$push":{"logs":{"Activity":"Donor Approval Status","Time stamp": datetime.datetime.now(),"Approval-status": option, "Message":"Donor has accepted the request of change of address." }}})
-            return redirect(url_for('login2'))
+            resp =  make_response(redirect(url_for('login2')))
+            resp.set_cookie('option', option)
+            return resp
         else:
-            coll.find_one_and_update({"ReferenceId": userpid },{"$push":{"logs":{"Activity":"Donor Approval Status","Time stamp": datetime.datetime.now(),"Approval-status": option, "Message":"Donor has rejected the reqeust of change of address." }}})
-            return render_template('approval.html', out="THANKS for your response!!", o1=userpi)
+            #return render_template('approval.html', out="THANKS for your response!!", o1=userpi)
+            resp =  make_response(redirect(url_for('login2')))
+            resp.set_cookie('option', option)
+            return resp
+    elif(request.method=="POST" and veriff != "Null"):
+        return render_template('approval.html', out="Sorry, you can make response only once", o1=userpi)
 
-    resp = make_response(render_template('approval.html', o1=userpi))
+    nm = coll.find_one({"ReferenceId": userpi})["Name"]
+    resp = make_response(render_template('approval.html', o1=userpi, name=nm))
     resp.set_cookie('UserReferenceId', userpi )
     return resp
 
@@ -408,13 +466,18 @@ def appstatus():
         daddres = coll.find_one({"ReferenceId": userpid})["Donor_Address"]
         daddres = fernet.decrypt(daddres).decode()
         dist = round(dist)
+        nme = coll.find_one({"ReferenceId": userpid})["Name"]
+        nom = coll.find_one({"ReferenceId": userpid})["Donor_Number"]
+        nome = fernet.decrypt(nom).decode()
         print(dist, co_ord1, co_ord2)
         if(dist < 250):
             suc_mes = "Address updated successfully!!"
             uadd.insert_one({"ReferenceId": userpid, "Adrress": fina_add, "Time stamp": datetime.datetime.now()})
             coll.find_one_and_update({"ReferenceId": userpid },{"$push":{"logs":{"Activity":"User Address Update","Status":"Success","Time stamp": datetime.datetime.now(),"Update-status": "Updated", "Message":"The User has successfully updated his aadhaar address" }}})
-            resp = make_response(render_template('userapprovalstatus.html', out=stat, usera=uaddres, donora=daddres, o1=apart, o2=strr, o3=lmk, o4=atc, o5=vtc, o6=po, o7=sd, o8=dt, o9=stt, o10=pin, mess=suc_mes))
+            msg2(nome, nme, fina_add)
+            resp = make_response(redirect(url_for('updatesuccess')))
             resp.delete_cookie('ReferenceId')
+            resp.delete_cookie('User_Address')
             return resp
         else:
             suc_mes = "Address you gave has major change, please rechech the address!!"
@@ -439,9 +502,14 @@ def appstatus():
         dist = raw_donora["dist"]
         state = raw_donora["state"]
         pincode = raw_donora["pc"]
-        return render_template('userapprovalstatus.html', out=stat, usera=uaddres, donora=daddres, o1=house, o2=street, o3=lamark, o4=locality, o5=vtc, o6=po, o7=subd, o8=dist, o9=state, o10=pincode, mess="null")
+        return render_template('userapprovalstatus.html', out=stat, usera=uaddres, donora=daddres, o1=house, o2=street, o3=lamark, o4=locality, o5=vtc, o6=po, o7=subd, o8=dist, o9=state, o10=pincode)
     else:
-        return render_template('userapprovalstatus.html', out=stat, mess="null")
+        return render_template('userapprovalstatus.html', out=stat)
+
+@app.route('/updatesuccess',methods=['GET','POST'])
+def updatesuccess():
+    return render_template('updatesucess.html')
+
 
 
 if __name__ == "__main__":
